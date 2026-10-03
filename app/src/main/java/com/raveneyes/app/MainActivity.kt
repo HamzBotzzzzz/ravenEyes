@@ -47,15 +47,17 @@ class MainActivity : AppCompatActivity() {
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         binding.buttonCameraAction.setOnClickListener {
-            when (currentState) {
-                State.NOT_REQUESTED, State.DENIED ->
-                    permissionLauncher.launch(Manifest.permission.CAMERA)
-                State.PERMANENTLY_DENIED ->
-                    openAppSettings()
-                State.GRANTED ->
-                    startCamera()
-            }
-        }
+    when (currentState) {
+        State.NOT_REQUESTED, State.DENIED ->
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        State.PERMANENTLY_DENIED ->
+            openAppSettings()
+        State.GRANTED ->
+            startCamera()
+        State.ERROR ->
+            startCamera()
+    }
+}
 
         evaluateInitialState()
     }
