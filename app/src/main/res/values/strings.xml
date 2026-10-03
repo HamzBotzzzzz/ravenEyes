@@ -60,4 +60,15 @@
 <string name="calibration_status_ready">Calibration: READY ✓</string>
 <string name="calibration_action_open">CALIBRATION</string>
 <string name="calibration_action_reset">RESET CALIBRATION</string>
+
+<string name="accessibility_service_label">Raven Eyes</string>
+<string name="accessibility_service_description">Raven Eyes uses accessibility to control media actions with eye gestures. Disabled in APK 6.</string>
+
+<string name="accessibility_status_disabled">Accessibility: DISABLED</string>
+<string name="accessibility_status_enabled">Accessibility: ENABLED ✓</string>
+
+<string name="accessibility_action_enable">ENABLE ACCESSIBILITY</string>
+<string name="accessibility_action_open_settings">ACCESSIBILITY SETTINGS</string>
+
+<string name="accessibility_restricted_hint">If Android shows “Restricted setting”, open App info → ⋮ → Allow restricted settings, then enable Raven Eyes manually.</string>
 </resources>

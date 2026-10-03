@@ -177,6 +177,33 @@
     android:textColor="@color/raven_accent"
     android:textSize="15sp"
     android:textStyle="bold" />
+    
+    <TextView
+    android:id="@+id/textAccessibilityStatus"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="12dp"
+    android:text="@string/accessibility_status_disabled"
+    android:textColor="@color/raven_accent"
+    android:textSize="15sp"
+    android:textStyle="bold" />
+
+<Button
+    android:id="@+id/buttonAccessibility"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp"
+    android:text="@string/accessibility_action_enable" />
+
+<TextView
+    android:id="@+id/textAccessibilityHint"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="4dp"
+    android:gravity="center"
+    android:text="@string/accessibility_restricted_hint"
+    android:textColor="@color/raven_text_secondary"
+    android:textSize="12sp" />
 
 <Button
     android:id="@+id/buttonCalibration"
