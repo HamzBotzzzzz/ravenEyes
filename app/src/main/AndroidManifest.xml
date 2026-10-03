@@ -6,6 +6,9 @@
     <uses-feature
         android:name="android.hardware.camera.any"
         android:required="false" />
+        <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -46,6 +49,10 @@
         android:name="android.accessibilityservice"
         android:resource="@xml/accessibility_service_config" />
 </service>
+<service
+    android:name=".service.RavenEyesCameraService"
+    android:exported="false"
+    android:foregroundServiceType="camera" />
     </application>
 
 </manifest>

@@ -198,6 +198,42 @@
     android:layout_marginTop="2dp"
     android:textColor="@color/raven_text_secondary"
     android:textSize="12sp" />
+    
+    <View
+    android:layout_width="120dp"
+    android:layout_height="1dp"
+    android:layout_marginTop="12dp"
+    android:background="@color/raven_surface" />
+
+<TextView
+    android:id="@+id/textBackgroundStatus"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="12dp"
+    android:text="@string/background_status_stopped"
+    android:textColor="@color/raven_accent"
+    android:textSize="15sp"
+    android:textStyle="bold" />
+
+<LinearLayout
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp"
+    android:orientation="horizontal">
+
+    <Button
+        android:id="@+id/buttonStartBackground"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/background_action_start" />
+
+    <Button
+        android:id="@+id/buttonStopBackground"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:text="@string/background_action_stop" />
+</LinearLayout>
 
 <LinearLayout
     android:layout_width="wrap_content"
