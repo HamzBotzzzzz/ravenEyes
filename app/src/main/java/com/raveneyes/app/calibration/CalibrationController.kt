@@ -44,7 +44,6 @@ class CalibrationController {
 
     private var step: Step = Step.IDLE
     private var stepStartMs: Long = 0L
-    private var lastBlinkSeen: Long = 0L
     private var lastSeenSequence: Int = 0
     private var lastLoggedStep: Step = Step.IDLE
 
@@ -52,10 +51,14 @@ class CalibrationController {
         reset()
         step = Step.PRECHECK
         stepStartMs = nowMs
+        Log.i(TAG, "Calibration begin")
         return status(nowMs, "Preparing. Look at the camera.", null)
     }
 
-    fun cancel() { reset() }
+    fun cancel() {
+        Log.i(TAG, "Calibration cancelled")
+        reset()
+    }
 
     fun onFrame(
         faceCount: Int,
@@ -65,11 +68,6 @@ class CalibrationController {
         nowMs: Long
     ): Status {
         if (step == Step.IDLE || step == Step.COMPLETE) return status(nowMs, "", null)
-
-        if (step != lastLoggedStep) {
-            lastLoggedStep = step
-            Log.i(TAG, "Step -> $step")
-        }
 
         val faceValid = faceCount == 1
         val eyesValid = faceValid && leftProb != null && rightProb != null &&
@@ -138,9 +136,11 @@ class CalibrationController {
                     }
                 }
                 if (blinkOutput.lastEvent == BlinkDetector.Event.LONG_CLOSURE) {
-                    val closureDur = blinkOutput.lastBlinkDurationMs ?: 0L
-                    if (closureDur in 700L..2500L) {
-                        longClosureMs = closureDur
+                    val dur = blinkOutput.lastBlinkDurationMs ?: 0L
+                    val closureDur = blinkOutput.currentClosureMs ?: 0L
+                    val effective = if (dur > 0) dur else closureDur
+                    if (effective in 700L..2500L) {
+                        longClosureMs = effective
                         step = Step.DOUBLE_BLINK
                         stepStartMs = nowMs
                     } else {
@@ -179,7 +179,6 @@ class CalibrationController {
 
                 if (nowMs - stepStartMs > DOUBLE_BLINK_TIMEOUT_MS) {
                     stepStartMs = nowMs
-                    lastSeenSequence = 0
                     Log.w(TAG, "Double blink timeout, retrying step")
                     return status(nowMs, "Double blink not detected. Please try again.", RejectReason.NOT_ENOUGH_SAMPLES)
                 }
@@ -194,33 +193,78 @@ class CalibrationController {
             else -> {}
         }
 
+        if (step != lastLoggedStep) {
+            lastLoggedStep = step
+            Log.i(TAG, "Step -> $step")
+        }
+
         return status(nowMs, messageFor(step), reject)
     }
 
     fun buildDataOrNull(): CalibrationData? {
-        if (step != Step.COMPLETE) return null
-        if (blinkDurations.size < 3) return null
-        if (longClosureMs <= 0) return null
-        if (interBlinkMs <= 0) return null
-        if (openEyeLeftSamples.isEmpty()) return null
-        if (closedEyeLeftSamples.isEmpty()) return null
+        if (step != Step.COMPLETE) {
+            Log.e(TAG, "BUILD FAIL: step != COMPLETE (current=$step)")
+            return null
+        }
+        if (blinkDurations.size < 3) {
+            Log.e(TAG, "BUILD FAIL: blinkDurations.size=${blinkDurations.size} < 3")
+            return null
+        }
+        if (longClosureMs <= 0L) {
+            Log.e(TAG, "BUILD FAIL: longClosureMs=$longClosureMs <= 0")
+            return null
+        }
+        if (interBlinkMs <= 0L) {
+            Log.e(TAG, "BUILD FAIL: interBlinkMs=$interBlinkMs <= 0")
+            return null
+        }
+        if (openEyeLeftSamples.isEmpty() || openEyeRightSamples.isEmpty()) {
+            Log.e(TAG, "BUILD FAIL: openEye samples empty (L=${openEyeLeftSamples.size}, R=${openEyeRightSamples.size})")
+            return null
+        }
+        if (closedEyeLeftSamples.isEmpty() || closedEyeRightSamples.isEmpty()) {
+            Log.e(TAG, "BUILD FAIL: closedEye samples empty (L=${closedEyeLeftSamples.size}, R=${closedEyeRightSamples.size})")
+            return null
+        }
 
         val openL = median(openEyeLeftSamples)
         val openR = median(openEyeRightSamples)
         val closedL = median(closedEyeLeftSamples)
         val closedR = median(closedEyeRightSamples)
 
-        if (openL == null || openR == null || closedL == null || closedR == null) return null
-        if (openL <= closedL || openR <= closedR) return null
+        if (openL == null || openR == null || closedL == null || closedR == null) {
+            Log.e(TAG, "BUILD FAIL: median returned null (openL=$openL openR=$openR closedL=$closedL closedR=$closedR)")
+            return null
+        }
+
+        val medianBlink = medianLong(blinkDurations)
+        if (medianBlink == null) {
+            Log.e(TAG, "BUILD FAIL: medianLong(blinkDurations) returned null")
+            return null
+        }
+
+        if (openL <= closedL || openR <= closedR) {
+            Log.e(TAG, "BUILD FAIL: open baseline not greater than closed (openL=$openL closedL=$closedL openR=$openR closedR=$closedR)")
+            return null
+        }
 
         val rawThreshold = (openL + closedL + openR + closedR) / 4f
-        val openThreshold = rawThreshold.coerceIn(0.05f, 0.95f)
-        val closeThreshold = openThreshold
+        val openThreshold = rawThreshold.coerceIn(0.10f, 0.95f)
+        val closeThreshold = (openThreshold - HYSTERESIS_MARGIN).coerceIn(0.05f, 0.90f)
 
-        val medianBlink = medianLong(blinkDurations) ?: return null
         val normalBlinkMax = (medianBlink + 200L).coerceIn(400L, 700L)
         val longClosureThreshold = max(medianBlink * 4L, 800L).coerceAtMost(1500L)
         val doubleBlinkWindow = (interBlinkMs + 800L).coerceIn(1200L, 2500L)
+
+        Log.i(TAG, "===== CALIBRATION FINAL DATA =====")
+        Log.i(TAG, "openEyeLeft=$openL, openEyeRight=$openR")
+        Log.i(TAG, "closedEyeLeft=$closedL, closedEyeRight=$closedR")
+        Log.i(TAG, "normalBlinkDurationMs=$medianBlink, longClosureMs=$longClosureMs, interBlinkMs=$interBlinkMs")
+        Log.i(TAG, "openThreshold=$openThreshold, closeThreshold=$closeThreshold")
+        Log.i(TAG, "normalBlinkMaxMs=$normalBlinkMax, longClosureThresholdMs=$longClosureThreshold, doubleBlinkWindowMs=$doubleBlinkWindow")
+        Log.i(TAG, "openSamples=${openEyeLeftSamples.size}, closedSamples=${closedEyeLeftSamples.size}, blinkSamples=${blinkDurations.size}")
+        Log.i(TAG, "calibrationVersion=${CalibrationData.CURRENT_VERSION}")
+        Log.i(TAG, "=================================")
 
         return CalibrationData(
             calibrationVersion = CalibrationData.CURRENT_VERSION,
@@ -271,8 +315,8 @@ class CalibrationController {
     private fun reset() {
         step = Step.IDLE
         stepStartMs = 0L
-        lastBlinkSeen = 0L
         lastSeenSequence = 0
+        lastLoggedStep = Step.IDLE
         openEyeLeftSamples.clear()
         openEyeRightSamples.clear()
         closedEyeLeftSamples.clear()
@@ -307,5 +351,6 @@ class CalibrationController {
         const val STEP_TIMEOUT_MS = 30000L
         const val DOUBLE_BLINK_TIMEOUT_MS = 15000L
         const val MIN_OPEN_SAMPLES = 15
+        const val HYSTERESIS_MARGIN = 0.05f
     }
 }

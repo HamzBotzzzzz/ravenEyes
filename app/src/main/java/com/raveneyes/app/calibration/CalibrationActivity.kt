@@ -139,26 +139,45 @@ class CalibrationActivity : AppCompatActivity() {
             binding.textReject.visibility = View.GONE
         }
 
-        if (status.step == CalibrationController.Step.COMPLETE) {
-            val data = controller.buildDataOrNull()
-            if (data != null && data.isValid()) {
-                lifecycleScope.launch {
-                    try {
-                        store.save(data)
-                        Log.i(TAG, "Calibration saved")
-                        finish()
-                    } catch (t: Throwable) {
-                        Log.e(TAG, "Calibration save error", t)
-                    }
-                }
-            } else {
-                binding.textReject.visibility = View.VISIBLE
-                binding.textReject.text = "Calibration invalid. Please repeat."
-                binding.buttonStart.isEnabled = true
-            }
-        }
+if (status.step == CalibrationController.Step.COMPLETE) {
+    val data = controller.buildDataOrNull()
+
+    if (data == null) {
+        Log.e(TAG, "buildDataOrNull() returned null")
+        binding.textReject.visibility = View.VISIBLE
+        binding.textReject.text = "Calibration data incomplete. Please repeat."
+        binding.buttonStart.isEnabled = true
+        return
     }
 
+    if (!data.isValid()) {
+        Log.e(TAG, "CalibrationData.isValid() = false")
+        Log.e(TAG, "version=${data.calibrationVersion}")
+        Log.e(TAG, "openThreshold=${data.openThreshold}, closeThreshold=${data.closeThreshold}")
+        Log.e(TAG, "openEyeL=${data.openEyeLeft}, openEyeR=${data.openEyeRight}")
+        Log.e(TAG, "closedEyeL=${data.closedEyeLeft}, closedEyeR=${data.closedEyeRight}")
+        Log.e(TAG, "normalBlink=${data.normalBlinkDurationMs}, longClosure=${data.longClosureDurationMs}, interBlink=${data.interBlinkIntervalMs}")
+        binding.textReject.visibility = View.VISIBLE
+        binding.textReject.text = "Calibration data invalid. Please repeat."
+        binding.buttonStart.isEnabled = true
+        return
+    }
+
+    Log.i(TAG, "CalibrationData.isValid() = true, saving...")
+    lifecycleScope.launch {
+        try {
+            store.save(data)
+            Log.i(TAG, "Calibration saved OK")
+            finish()
+        } catch (t: Throwable) {
+            Log.e(TAG, "Calibration save error", t)
+            binding.textReject.visibility = View.VISIBLE
+            binding.textReject.text = "Failed to save calibration. Please try again."
+            binding.buttonStart.isEnabled = true
+        }
+    }
+}
+}
     private fun FaceAnalyzer.EyeState.toBlink(): BlinkDetector.EyeState = when (this) {
         FaceAnalyzer.EyeState.OPEN -> BlinkDetector.EyeState.OPEN
         FaceAnalyzer.EyeState.CLOSED -> BlinkDetector.EyeState.CLOSED
