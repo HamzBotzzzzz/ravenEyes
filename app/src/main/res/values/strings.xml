@@ -71,4 +71,11 @@
 <string name="accessibility_action_open_settings">ACCESSIBILITY SETTINGS</string>
 
 <string name="accessibility_restricted_hint">If Android shows “Restricted setting”, open App info → ⋮ → Allow restricted settings, then enable Raven Eyes manually.</string>
+
+<string name="gesture_status_ready">Gesture Engine: READY</string>
+<string name="gesture_last_action_format">Last Action: %1$s</string>
+<string name="gesture_last_at_format">Last Action At: %1$d</string>
+<string name="gesture_cooldown_format">Cooldown: %1$s</string>
+<string name="gesture_test_scroll">TEST SCROLL ACTION</string>
+<string name="gesture_test_like">TEST LIKE ACTION</string>
 </resources>

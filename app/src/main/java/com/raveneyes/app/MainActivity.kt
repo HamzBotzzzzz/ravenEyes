@@ -9,15 +9,15 @@ import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
-import android.provider.Settings
-import com.raveneyes.app.accessibility.AccessibilityStatus
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.raveneyes.app.accessibility.AccessibilityStatus
 import com.raveneyes.app.calibration.CalibrationStore
 import com.raveneyes.app.databinding.ActivityMainBinding
+import com.raveneyes.app.gesture.GestureEngine
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.util.concurrent.ExecutorService
@@ -32,6 +32,9 @@ class MainActivity : AppCompatActivity() {
     private var faceAnalyzer: FaceAnalyzer? = null
     private lateinit var blinkDetector: BlinkDetector
     private lateinit var calibrationStore: CalibrationStore
+
+    private val gestureEngine = GestureEngine()
+    private var calibrationReady: Boolean = false
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -62,15 +65,21 @@ class MainActivity : AppCompatActivity() {
                 val now = System.currentTimeMillis()
                 val left = snapshot.leftEye.toBlinkEye()
                 val right = snapshot.rightEye.toBlinkEye()
-                val output = blinkDetector.update(
+                val blinkOutput = blinkDetector.update(
                     leftState = left,
                     rightState = right,
                     faceCount = snapshot.faceCount,
                     nowMs = now
                 )
+                val gestureResult = gestureEngine.process(
+                    output = blinkOutput,
+                    calibrationReady = calibrationReady,
+                    nowMs = now
+                )
                 runOnUiThread {
                     updateFaceAndEyeStatus(snapshot)
-                    updateBlinkStatus(output)
+                    updateBlinkStatus(blinkOutput)
+                    refreshGestureDebug(gestureResult)
                 }
             },
             onError = { runOnUiThread {
@@ -104,17 +113,10 @@ class MainActivity : AppCompatActivity() {
                 Log.i(TAG, "Calibration cleared")
             }
         }
-        
-        binding.buttonAccessibility.setOnClickListener {
-    if (AccessibilityStatus.isServiceEnabled(this)) {
-        // already enabled: buka Settings juga (opsional, sesuai instruksi tetap bisa buka)
-        openAccessibilitySettings()
-    } else {
-        openAccessibilitySettings()
-    }
-}
 
-refreshAccessibilityStatus()
+        binding.buttonAccessibility.setOnClickListener {
+            openAccessibilitySettings()
+        }
 
         binding.buttonCameraAction.setOnClickListener {
             when (currentState) {
@@ -126,23 +128,43 @@ refreshAccessibilityStatus()
             }
         }
 
-        observeCalibration()
+        binding.buttonTestScroll.setOnClickListener {
+            gestureEngine.triggerTestScroll(System.currentTimeMillis())
+            refreshGestureDebug(null)
+        }
+
+        binding.buttonTestLike.setOnClickListener {
+            gestureEngine.triggerTestLike(System.currentTimeMillis())
+            refreshGestureDebug(null)
+        }
+
+        refreshAccessibilityStatus()
+        refreshCalibrationStatus()
+
+        lifecycleScope.launch {
+            calibrationStore.calibrationFlow.collectLatest { data ->
+                calibrationReady = data != null && data.isValid()
+                runOnUiThread { refreshCalibrationStatus() }
+            }
+        }
+
         evaluateInitialState()
     }
 
     override fun onResume() {
-    super.onResume()
-    refreshAccessibilityStatus()
-    if (currentState == State.GRANTED) {
-        startCamera()
-    } else {
-        evaluateInitialState()
+        super.onResume()
+        refreshAccessibilityStatus()
+        if (currentState == State.GRANTED) {
+            startCamera()
+        } else {
+            evaluateInitialState()
+        }
     }
-}
 
     override fun onStop() {
         super.onStop()
         blinkDetector.onFaceLost()
+        gestureEngine.onLifecyclePause()
     }
 
     override fun onDestroy() {
@@ -154,18 +176,6 @@ refreshAccessibilityStatus()
         cameraExecutor = null
         analysisExecutor = null
         super.onDestroy()
-    }
-
-    private fun observeCalibration() {
-        lifecycleScope.launch {
-            calibrationStore.calibrationFlow.collectLatest { data ->
-                if (data != null && data.isValid()) {
-                    binding.textCalibrationStatus.text = getString(R.string.calibration_status_ready)
-                } else {
-                    binding.textCalibrationStatus.text = getString(R.string.calibration_status_required)
-                }
-            }
-        }
     }
 
     private fun evaluateInitialState() {
@@ -187,6 +197,16 @@ refreshAccessibilityStatus()
             android.net.Uri.fromParts("package", packageName, null)
         )
         startActivity(intent)
+    }
+
+    private fun openAccessibilitySettings() {
+        try {
+            val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to open accessibility settings", t)
+        }
     }
 
     private fun startCamera() {
@@ -296,6 +316,52 @@ refreshAccessibilityStatus()
         }
     }
 
+    private fun refreshCalibrationStatus() {
+        binding.textCalibrationStatus.text = if (calibrationReady)
+            getString(R.string.calibration_status_ready)
+        else
+            getString(R.string.calibration_status_required)
+    }
+
+    private fun refreshGestureDebug(result: GestureEngine.Result?) {
+        binding.textGestureEngine.text = getString(R.string.gesture_status_ready)
+
+        if (result != null) {
+            binding.textGestureLastAction.text = getString(
+                R.string.gesture_last_action_format,
+                result.lastAction.name
+            )
+            binding.textGestureLastAt.text = result.lastActionAtMs?.let {
+                getString(R.string.gesture_last_at_format, it)
+            } ?: ""
+            binding.textGestureCooldown.text = getString(
+                R.string.gesture_cooldown_format,
+                if (result.cooldown) "COOLDOWN" else "READY"
+            )
+        } else {
+            binding.textGestureLastAction.text = getString(
+                R.string.gesture_last_action_format, "NONE"
+            )
+            binding.textGestureLastAt.text = ""
+            binding.textGestureCooldown.text = getString(
+                R.string.gesture_cooldown_format, "READY"
+            )
+        }
+    }
+
+    private fun refreshAccessibilityStatus() {
+        val enabled = AccessibilityStatus.isServiceEnabled(this)
+        if (enabled) {
+            binding.textAccessibilityStatus.text = getString(R.string.accessibility_status_enabled)
+            binding.buttonAccessibility.text = getString(R.string.accessibility_action_open_settings)
+            binding.textAccessibilityHint.visibility = View.GONE
+        } else {
+            binding.textAccessibilityStatus.text = getString(R.string.accessibility_status_disabled)
+            binding.buttonAccessibility.text = getString(R.string.accessibility_action_enable)
+            binding.textAccessibilityHint.visibility = View.VISIBLE
+        }
+    }
+
     private fun formatEye(label: String, state: FaceAnalyzer.EyeState): String {
         val stateText = when (state) {
             FaceAnalyzer.EyeState.OPEN -> getString(R.string.eye_state_open)
@@ -376,34 +442,6 @@ refreshAccessibilityStatus()
         FaceAnalyzer.EyeState.CLOSED -> BlinkDetector.EyeState.CLOSED
         FaceAnalyzer.EyeState.UNKNOWN -> BlinkDetector.EyeState.UNKNOWN
     }
-    
-    private fun openAccessibilitySettings() {
-    try {
-        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(intent)
-    } catch (t: Throwable) {
-        Log.e(TAG, "Failed to open accessibility settings", t)
-    }
-}
-
-private fun refreshAccessibilityStatus() {
-    val enabled = AccessibilityStatus.isServiceEnabled(this)
-    if (enabled) {
-        binding.textAccessibilityStatus.text =
-            getString(R.string.accessibility_status_enabled)
-        binding.buttonAccessibility.text =
-            getString(R.string.accessibility_action_open_settings)
-        binding.textAccessibilityHint.visibility = View.GONE
-    } else {
-        binding.textAccessibilityStatus.text =
-            getString(R.string.accessibility_status_disabled)
-        binding.buttonAccessibility.text =
-            getString(R.string.accessibility_action_enable)
-        binding.textAccessibilityHint.visibility = View.VISIBLE
-    }
-    Log.i(TAG, "Accessibility enabled=$enabled")
-}
 
     private enum class State {
         NOT_REQUESTED,
