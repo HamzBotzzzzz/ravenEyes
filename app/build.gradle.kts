@@ -11,8 +11,8 @@ android {
         applicationId = "com.raveneyes.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     buildTypes {
@@ -31,8 +31,9 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = "17"
-    }
+    jvmTarget = "17"
+    freeCompilerArgs += "-opt-in=androidx.camera.core.ExperimentalGetImage"
+}
 
     buildFeatures {
         viewBinding = true
@@ -43,4 +44,12 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
+
+    val cameraxVersion = "1.3.4"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+
+    implementation("com.google.mlkit:face-detection:16.1.7")
 }

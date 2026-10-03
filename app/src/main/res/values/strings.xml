@@ -1,8 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Raven Eyes</string>
+
     <string name="splash_subtitle">System Bootstrap</string>
+
     <string name="main_title">RAVEN EYES</string>
-    <string name="main_subtitle">System Bootstrap</string>
-    <string name="status_ready">APK 0 READY</string>
+    <string name="main_subtitle">Camera Foundation</string>
+
+    <string name="camera_status_off">Camera: OFF</string>
+    <string name="camera_status_ready">Camera: READY</string>
+    <string name="camera_status_error">Camera: ERROR</string>
+
+    <string name="camera_permission_required">Camera permission required.</string>
+    <string name="camera_permission_denied">Camera permission denied.</string>
+    <string name="camera_permission_disabled">Camera permission is disabled.\nPlease enable it from Android Settings.</string>
+    <string name="camera_message_preview_active">Front camera preview active.</string>
+    <string name="camera_message_error">Camera unavailable or failed to initialize.</string>
+
+    <string name="camera_action_enable">ENABLE CAMERA</string>
+    <string name="camera_action_try_again">TRY AGAIN</string>
+    <string name="camera_action_restart">RESTART CAMERA</string>
+    <string name="camera_action_open_settings">OPEN SETTINGS</string>
+    
+    <string name="face_status_waiting">Face: WAITING</string>
+<string name="face_status_not_detected">Face: NOT DETECTED</string>
+<string name="face_status_detected">Face: DETECTED ✓</string>
+<string name="face_status_multiple">Face: MULTIPLE FACES</string>
+<string name="face_status_error">Face: ERROR</string>
+<string name="face_count_format">Faces detected: %1$d</string>
 </resources>
