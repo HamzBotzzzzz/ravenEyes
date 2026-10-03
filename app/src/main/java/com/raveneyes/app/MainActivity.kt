@@ -1,6 +1,7 @@
 package com.raveneyes.app
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
@@ -12,7 +13,11 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.raveneyes.app.calibration.CalibrationStore
 import com.raveneyes.app.databinding.ActivityMainBinding
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -24,6 +29,7 @@ class MainActivity : AppCompatActivity() {
     private var analysisExecutor: ExecutorService? = null
     private var faceAnalyzer: FaceAnalyzer? = null
     private lateinit var blinkDetector: BlinkDetector
+    private lateinit var calibrationStore: CalibrationStore
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -47,6 +53,7 @@ class MainActivity : AppCompatActivity() {
         cameraExecutor = Executors.newSingleThreadExecutor()
         analysisExecutor = Executors.newSingleThreadExecutor()
         blinkDetector = BlinkDetector()
+        calibrationStore = CalibrationStore(applicationContext)
 
         faceAnalyzer = FaceAnalyzer(
             onResult = { snapshot ->
@@ -85,6 +92,17 @@ class MainActivity : AppCompatActivity() {
             ))
         }
 
+        binding.buttonCalibration.setOnClickListener {
+            startActivity(Intent(this, CalibrationActivity::class.java))
+        }
+
+        binding.buttonResetCalibration.setOnClickListener {
+            lifecycleScope.launch {
+                calibrationStore.clear()
+                Log.i(TAG, "Calibration cleared")
+            }
+        }
+
         binding.buttonCameraAction.setOnClickListener {
             when (currentState) {
                 State.NOT_REQUESTED, State.DENIED ->
@@ -95,6 +113,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        observeCalibration()
         evaluateInitialState()
     }
 
@@ -123,6 +142,18 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    private fun observeCalibration() {
+        lifecycleScope.launch {
+            calibrationStore.calibrationFlow.collectLatest { data ->
+                if (data != null && data.isValid()) {
+                    binding.textCalibrationStatus.text = getString(R.string.calibration_status_ready)
+                } else {
+                    binding.textCalibrationStatus.text = getString(R.string.calibration_status_required)
+                }
+            }
+        }
+    }
+
     private fun evaluateInitialState() {
         val granted = ContextCompat.checkSelfPermission(
             this, Manifest.permission.CAMERA
@@ -137,7 +168,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openAppSettings() {
-        val intent = android.content.Intent(
+        val intent = Intent(
             android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             android.net.Uri.fromParts("package", packageName, null)
         )

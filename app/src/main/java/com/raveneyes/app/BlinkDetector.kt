@@ -5,7 +5,6 @@ import android.util.Log
 class BlinkDetector {
 
     enum class EyeState { OPEN, CLOSED, UNKNOWN }
-
     enum class BlinkState { OPEN, CLOSED, UNKNOWN }
 
     data class Output(
@@ -14,15 +13,12 @@ class BlinkDetector {
         val lastBlinkDurationMs: Long?,
         val currentClosureMs: Long?,
         val sequenceCount: Int,
-        val lastEvent: Event?
+        val lastEvent: Event?,
+        val lastBlinkAtMs: Long,
+        val previousBlinkAtMs: Long
     )
 
-    enum class Event {
-        BLINK,
-        DOUBLE_BLINK,
-        TRIPLE_BLINK,
-        LONG_CLOSURE
-    }
+    enum class Event { BLINK, DOUBLE_BLINK, TRIPLE_BLINK, LONG_CLOSURE }
 
     private var state: BlinkState = BlinkState.UNKNOWN
     private var closedSinceMs: Long = 0L
@@ -33,6 +29,9 @@ class BlinkDetector {
 
     private var sequenceCount: Int = 0
     private var lastBlinkAtMs: Long = 0L
+    private var previousBlinkAtMs: Long = 0L
+
+    private var unknownStreakStartMs: Long = 0L
 
     fun reset() {
         state = BlinkState.UNKNOWN
@@ -42,40 +41,50 @@ class BlinkDetector {
         lastBlinkDurationMs = null
         sequenceCount = 0
         lastBlinkAtMs = 0L
+        previousBlinkAtMs = 0L
+        unknownStreakStartMs = 0L
     }
 
     fun onFaceLost() {
         state = BlinkState.UNKNOWN
         closedSinceMs = 0L
+        unknownStreakStartMs = 0L
     }
 
-    /**
-     * @param leftState  hasil klasifikasi ML Kit untuk mata kiri
-     * @param rightState hasil klasifikasi ML Kit untuk mata kanan
-     * @param faceCount  jumlah wajah di frame
-     * @param nowMs      System.currentTimeMillis()
-     */
     fun update(
         leftState: EyeState,
         rightState: EyeState,
         faceCount: Int,
         nowMs: Long
     ): Output {
-        // Reset semua bila wajah hilang / multiple / data mata tidak jelas
-        if (faceCount != 1 || leftState == EyeState.UNKNOWN || rightState == EyeState.UNKNOWN) {
-            state = BlinkState.UNKNOWN
-            closedSinceMs = 0L
+        val invalidFrame = faceCount != 1 ||
+                leftState == EyeState.UNKNOWN ||
+                rightState == EyeState.UNKNOWN
+
+        if (invalidFrame) {
+            if (faceCount != 1) {
+                state = BlinkState.UNKNOWN
+                closedSinceMs = 0L
+                unknownStreakStartMs = 0L
+                return output()
+            }
+            if (unknownStreakStartMs == 0L) unknownStreakStartMs = nowMs
+            val unknownDuration = nowMs - unknownStreakStartMs
+            if (unknownDuration > UNKNOWN_TOLERANCE_MS) {
+                state = BlinkState.UNKNOWN
+                closedSinceMs = 0L
+                unknownStreakStartMs = 0L
+            }
             return output()
+        } else {
+            unknownStreakStartMs = 0L
         }
 
-        // Wajah ada satu, data mata valid
         val bothClosed = leftState == EyeState.CLOSED && rightState == EyeState.CLOSED
         val bothOpen = leftState == EyeState.OPEN && rightState == EyeState.OPEN
         val asymmetric = !bothClosed && !bothOpen
 
-        // Wink / asymmetric: jangan memicu state machine
         if (asymmetric) {
-            // tetap di state sekarang, tapi jangan update timer
             return output()
         }
 
@@ -84,10 +93,7 @@ class BlinkDetector {
         when (state) {
             BlinkState.UNKNOWN, BlinkState.OPEN -> {
                 if (bothClosed) {
-                    // mulai kandidat closed
-                    if (closedSinceMs == 0L) {
-                        closedSinceMs = nowMs
-                    }
+                    if (closedSinceMs == 0L) closedSinceMs = nowMs
                     val sinceOpen = nowMs - lastTransitionToOpenMs
                     if (sinceOpen >= MIN_OPEN_MS || lastTransitionToOpenMs == 0L) {
                         val candidateClosedDuration = nowMs - closedSinceMs
@@ -96,7 +102,6 @@ class BlinkDetector {
                         }
                     }
                 } else {
-                    // bothOpen
                     closedSinceMs = 0L
                     if (state != BlinkState.OPEN) {
                         state = BlinkState.OPEN
@@ -107,9 +112,8 @@ class BlinkDetector {
 
             BlinkState.CLOSED -> {
                 if (bothClosed) {
-                    // tetap tertutup, tidak ada event
+                    // tetap tertutup
                 } else {
-                    // transisi ke OPEN
                     val durationMs = nowMs - closedSinceMs
                     closedSinceMs = 0L
                     state = BlinkState.OPEN
@@ -125,6 +129,8 @@ class BlinkDetector {
                             } else {
                                 sequenceCount++
                             }
+
+                            previousBlinkAtMs = lastBlinkAtMs
                             lastBlinkAtMs = nowMs
 
                             event = when (sequenceCount) {
@@ -133,31 +139,25 @@ class BlinkDetector {
                                 else -> Event.TRIPLE_BLINK
                             }
 
-                            if (event == Event.DOUBLE_BLINK) {
-                                Log.i(TAG, "Double Blink detected")
-                            } else if (event == Event.TRIPLE_BLINK) {
-                                Log.i(TAG, "Triple Blink detected")
-                            } else {
-                                Log.i(TAG, "Blink detected, duration=$durationMs ms")
-                            }
+                            Log.d(TAG, "Blink: dur=$durationMs, seq=$sequenceCount, last=$lastBlinkAtMs, prev=$previousBlinkAtMs")
+
+                            if (event == Event.DOUBLE_BLINK) Log.i(TAG, "Double Blink detected")
+                            else if (event == Event.TRIPLE_BLINK) Log.i(TAG, "Triple Blink detected")
+                            else Log.i(TAG, "Blink detected, duration=$durationMs ms")
                         }
                         durationMs >= LONG_CLOSURE_MS -> {
                             event = Event.LONG_CLOSURE
+                            lastBlinkDurationMs = durationMs
                             Log.i(TAG, "Long Closure detected, duration=$durationMs ms")
-                            // long closure mereset sequence
                             sequenceCount = 0
-                            lastBlinkAtMs = 0L
                         }
-                        // di antara MAX_BLINK_MS dan LONG_CLOSURE_MS: diabaikan
                     }
                 }
             }
         }
 
-        // reset sequence jika terlalu lama
         if (lastBlinkAtMs > 0L && nowMs - lastBlinkAtMs > SEQUENCE_RESET_MS) {
             sequenceCount = 0
-            lastBlinkAtMs = 0L
         }
 
         return output(event)
@@ -174,20 +174,21 @@ class BlinkDetector {
             lastBlinkDurationMs = lastBlinkDurationMs,
             currentClosureMs = currentClosure,
             sequenceCount = sequenceCount,
-            lastEvent = event
+            lastEvent = event,
+            lastBlinkAtMs = lastBlinkAtMs,
+            previousBlinkAtMs = previousBlinkAtMs
         )
     }
 
     companion object {
         private const val TAG = "RavenEyes.Blink"
 
-        // Heuristic awal, BUKAN threshold final.
-        // Akan diganti oleh calibration di APK 5.
         const val MIN_CLOSED_MS = 80L
         const val MAX_BLINK_MS = 500L
         const val MIN_OPEN_MS = 60L
         const val LONG_CLOSURE_MS = 800L
         const val SEQUENCE_WINDOW_MS = 2000L
         const val SEQUENCE_RESET_MS = 2000L
+        const val UNKNOWN_TOLERANCE_MS = 150L
     }
 }

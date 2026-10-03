@@ -167,6 +167,30 @@
     android:text=""
     android:textColor="@color/raven_text_secondary"
     android:textSize="13sp" />
+    
+    <TextView
+    android:id="@+id/textCalibrationStatus"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="12dp"
+    android:text="@string/calibration_status_required"
+    android:textColor="@color/raven_accent"
+    android:textSize="15sp"
+    android:textStyle="bold" />
+
+<Button
+    android:id="@+id/buttonCalibration"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp"
+    android:text="@string/calibration_action_open" />
+
+<Button
+    android:id="@+id/buttonResetCalibration"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="4dp"
+    android:text="@string/calibration_action_reset" />
 
 <Button
     android:id="@+id/buttonResetBlink"
