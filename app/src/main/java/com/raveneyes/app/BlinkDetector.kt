@@ -5,7 +5,6 @@ import android.util.Log
 class BlinkDetector {
 
     enum class EyeState { OPEN, CLOSED, UNKNOWN }
-
     enum class BlinkState { OPEN, CLOSED, UNKNOWN }
 
     data class Output(
@@ -19,12 +18,7 @@ class BlinkDetector {
         val previousBlinkAtMs: Long
     )
 
-    enum class Event {
-        BLINK,
-        DOUBLE_BLINK,
-        TRIPLE_BLINK,
-        LONG_CLOSURE
-    }
+    enum class Event { BLINK, DOUBLE_BLINK, TRIPLE_BLINK, LONG_CLOSURE }
 
     private var state: BlinkState = BlinkState.UNKNOWN
     private var closedSinceMs: Long = 0L
@@ -37,6 +31,8 @@ class BlinkDetector {
     private var lastBlinkAtMs: Long = 0L
     private var previousBlinkAtMs: Long = 0L
 
+    private var unknownStreakStartMs: Long = 0L
+
     fun reset() {
         state = BlinkState.UNKNOWN
         closedSinceMs = 0L
@@ -46,11 +42,13 @@ class BlinkDetector {
         sequenceCount = 0
         lastBlinkAtMs = 0L
         previousBlinkAtMs = 0L
+        unknownStreakStartMs = 0L
     }
 
     fun onFaceLost() {
         state = BlinkState.UNKNOWN
         closedSinceMs = 0L
+        unknownStreakStartMs = 0L
     }
 
     fun update(
@@ -59,10 +57,27 @@ class BlinkDetector {
         faceCount: Int,
         nowMs: Long
     ): Output {
-        if (faceCount != 1 || leftState == EyeState.UNKNOWN || rightState == EyeState.UNKNOWN) {
-            state = BlinkState.UNKNOWN
-            closedSinceMs = 0L
+        val invalidFrame = faceCount != 1 ||
+                leftState == EyeState.UNKNOWN ||
+                rightState == EyeState.UNKNOWN
+
+        if (invalidFrame) {
+            if (faceCount != 1) {
+                state = BlinkState.UNKNOWN
+                closedSinceMs = 0L
+                unknownStreakStartMs = 0L
+                return output()
+            }
+            if (unknownStreakStartMs == 0L) unknownStreakStartMs = nowMs
+            val unknownDuration = nowMs - unknownStreakStartMs
+            if (unknownDuration > UNKNOWN_TOLERANCE_MS) {
+                state = BlinkState.UNKNOWN
+                closedSinceMs = 0L
+                unknownStreakStartMs = 0L
+            }
             return output()
+        } else {
+            unknownStreakStartMs = 0L
         }
 
         val bothClosed = leftState == EyeState.CLOSED && rightState == EyeState.CLOSED
@@ -78,9 +93,7 @@ class BlinkDetector {
         when (state) {
             BlinkState.UNKNOWN, BlinkState.OPEN -> {
                 if (bothClosed) {
-                    if (closedSinceMs == 0L) {
-                        closedSinceMs = nowMs
-                    }
+                    if (closedSinceMs == 0L) closedSinceMs = nowMs
                     val sinceOpen = nowMs - lastTransitionToOpenMs
                     if (sinceOpen >= MIN_OPEN_MS || lastTransitionToOpenMs == 0L) {
                         val candidateClosedDuration = nowMs - closedSinceMs
@@ -126,20 +139,17 @@ class BlinkDetector {
                                 else -> Event.TRIPLE_BLINK
                             }
 
-                            if (event == Event.DOUBLE_BLINK) {
-                                Log.i(TAG, "Double Blink detected")
-                            } else if (event == Event.TRIPLE_BLINK) {
-                                Log.i(TAG, "Triple Blink detected")
-                            } else {
-                                Log.i(TAG, "Blink detected, duration=$durationMs ms")
-                            }
+                            Log.d(TAG, "Blink: dur=$durationMs, seq=$sequenceCount, last=$lastBlinkAtMs, prev=$previousBlinkAtMs")
+
+                            if (event == Event.DOUBLE_BLINK) Log.i(TAG, "Double Blink detected")
+                            else if (event == Event.TRIPLE_BLINK) Log.i(TAG, "Triple Blink detected")
+                            else Log.i(TAG, "Blink detected, duration=$durationMs ms")
                         }
                         durationMs >= LONG_CLOSURE_MS -> {
                             event = Event.LONG_CLOSURE
                             lastBlinkDurationMs = durationMs
                             Log.i(TAG, "Long Closure detected, duration=$durationMs ms")
                             sequenceCount = 0
-                            lastBlinkAtMs = 0L
                         }
                     }
                 }
@@ -148,7 +158,6 @@ class BlinkDetector {
 
         if (lastBlinkAtMs > 0L && nowMs - lastBlinkAtMs > SEQUENCE_RESET_MS) {
             sequenceCount = 0
-            lastBlinkAtMs = 0L
         }
 
         return output(event)
@@ -180,5 +189,6 @@ class BlinkDetector {
         const val LONG_CLOSURE_MS = 800L
         const val SEQUENCE_WINDOW_MS = 2000L
         const val SEQUENCE_RESET_MS = 2000L
+        const val UNKNOWN_TOLERANCE_MS = 150L
     }
 }

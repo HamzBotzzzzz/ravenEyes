@@ -3,7 +3,6 @@ package com.raveneyes.app.calibration
 import android.util.Log
 import com.raveneyes.app.BlinkDetector
 import kotlin.math.max
-import kotlin.math.min
 
 class CalibrationController {
 
@@ -28,14 +27,13 @@ class CalibrationController {
 
     data class Status(
         val step: Step,
-        val progress: Float,           // 0..1 dalam step
+        val progress: Float,
         val message: String,
         val reject: RejectReason?,
         val validSamples: Int,
         val requiredSamples: Int
     )
 
-    // Sample buffer
     private val openEyeLeftSamples = ArrayList<Float>(64)
     private val openEyeRightSamples = ArrayList<Float>(64)
     private val closedEyeLeftSamples = ArrayList<Float>(8)
@@ -47,6 +45,8 @@ class CalibrationController {
     private var step: Step = Step.IDLE
     private var stepStartMs: Long = 0L
     private var lastBlinkSeen: Long = 0L
+    private var lastSeenSequence: Int = 0
+    private var lastLoggedStep: Step = Step.IDLE
 
     fun begin(nowMs: Long): Status {
         reset()
@@ -65,6 +65,11 @@ class CalibrationController {
         nowMs: Long
     ): Status {
         if (step == Step.IDLE || step == Step.COMPLETE) return status(nowMs, "", null)
+
+        if (step != lastLoggedStep) {
+            lastLoggedStep = step
+            Log.i(TAG, "Step -> $step")
+        }
 
         val faceValid = faceCount == 1
         val eyesValid = faceValid && leftProb != null && rightProb != null &&
@@ -86,7 +91,6 @@ class CalibrationController {
                         stepStartMs = nowMs
                     }
                 } else {
-                    // reset timer kalau kondisi hilang
                     stepStartMs = nowMs
                 }
             }
@@ -101,7 +105,6 @@ class CalibrationController {
                         step = Step.BLINK
                         stepStartMs = nowMs
                     } else {
-                        // ulangi step
                         openEyeLeftSamples.clear()
                         openEyeRightSamples.clear()
                         stepStartMs = nowMs
@@ -115,7 +118,6 @@ class CalibrationController {
                     val dur = blinkOutput.lastBlinkDurationMs ?: 0L
                     if (dur in 50L..800L) blinkDurations.add(dur)
                 }
-                // simpan sample closed eye dari frame-frame terakhir long-closure nanti
                 if (blinkDurations.size >= 3) {
                     step = Step.LONG_CLOSURE
                     stepStartMs = nowMs
@@ -127,7 +129,6 @@ class CalibrationController {
             }
 
             Step.LONG_CLOSURE -> {
-                // capture closed-eye probability di 5 frame terakhir saat state CLOSED
                 if (blinkOutput.blinkState == BlinkDetector.BlinkState.CLOSED && eyesValid) {
                     closedEyeLeftSamples.add(leftProb!!)
                     closedEyeRightSamples.add(rightProb!!)
@@ -137,14 +138,9 @@ class CalibrationController {
                     }
                 }
                 if (blinkOutput.lastEvent == BlinkDetector.Event.LONG_CLOSURE) {
-                    val dur = blinkOutput.lastBlinkDurationMs ?: 0L
-                    // Perhatikan: BlinkDetector tidak mengisi lastBlinkDurationMs untuk LONG_CLOSURE.
-                    // Kita gunakan currentClosureMs dari event terakhir sebelum transisi.
-                    // Untuk itu BlinkDetector perlu mengirim durasi closure untuk LONG_CLOSURE.
-                    val closureDur = blinkOutput.currentClosureMs ?: 0L
-                    val effective = if (dur > 0) dur else closureDur
-                    if (effective in 700L..2500L) {
-                        longClosureMs = effective
+                    val closureDur = blinkOutput.lastBlinkDurationMs ?: 0L
+                    if (closureDur in 700L..2500L) {
+                        longClosureMs = closureDur
                         step = Step.DOUBLE_BLINK
                         stepStartMs = nowMs
                     } else {
@@ -158,23 +154,34 @@ class CalibrationController {
             }
 
             Step.DOUBLE_BLINK -> {
-                if (blinkOutput.lastEvent == BlinkDetector.Event.DOUBLE_BLINK) {
-                    val prev = blinkOutput.previousBlinkAtMs
-                    val last = blinkOutput.lastBlinkAtMs
-                    if (prev > 0 && last > prev) {
-                        val interval = last - prev
-                        if (interval in 150L..900L) {
-                            interBlinkMs = interval
-                            step = Step.VALIDATION
-                            stepStartMs = nowMs
-                        } else {
-                            stepStartMs = nowMs
-                            return status(nowMs, "Blink twice, quickly, in a natural rhythm.", RejectReason.OUT_OF_RANGE)
-                        }
+                val seq = blinkOutput.sequenceCount
+                val prev = blinkOutput.previousBlinkAtMs
+                val last = blinkOutput.lastBlinkAtMs
+
+                if (seq != lastSeenSequence) {
+                    lastSeenSequence = seq
+                    Log.i(TAG, "Sequence advanced: count=$seq, last=$last, prev=$prev")
+                }
+
+                if (seq >= 2 && prev > 0L && last > prev) {
+                    val interval = last - prev
+                    if (interval in 100L..1500L) {
+                        interBlinkMs = interval
+                        Log.i(TAG, "Double blink accepted: interval=$interval ms, seq=$seq")
+                        step = Step.VALIDATION
+                        stepStartMs = nowMs
+                        return status(nowMs, "Validating...", null)
+                    } else {
+                        Log.w(TAG, "Interval out of range: $interval ms")
+                        return status(nowMs, "Blink twice, quickly. Try again.", RejectReason.OUT_OF_RANGE)
                     }
-                } else if (nowMs - stepStartMs > STEP_TIMEOUT_MS) {
+                }
+
+                if (nowMs - stepStartMs > DOUBLE_BLINK_TIMEOUT_MS) {
                     stepStartMs = nowMs
-                    return status(nowMs, "Blink twice, quickly, in a natural rhythm.", RejectReason.NOT_ENOUGH_SAMPLES)
+                    lastSeenSequence = 0
+                    Log.w(TAG, "Double blink timeout, retrying step")
+                    return status(nowMs, "Double blink not detected. Please try again.", RejectReason.NOT_ENOUGH_SAMPLES)
                 }
             }
 
@@ -204,10 +211,9 @@ class CalibrationController {
         val closedR = median(closedEyeRightSamples)
 
         if (openL == null || openR == null || closedL == null || closedR == null) return null
-
-        // midpoint, dengan jaminan closed < open
-        val rawThreshold = (openL + closedL + openR + closedR) / 4f
         if (openL <= closedL || openR <= closedR) return null
+
+        val rawThreshold = (openL + closedL + openR + closedR) / 4f
         val openThreshold = rawThreshold.coerceIn(0.05f, 0.95f)
         val closeThreshold = openThreshold
 
@@ -266,6 +272,7 @@ class CalibrationController {
         step = Step.IDLE
         stepStartMs = 0L
         lastBlinkSeen = 0L
+        lastSeenSequence = 0
         openEyeLeftSamples.clear()
         openEyeRightSamples.clear()
         closedEyeLeftSamples.clear()
@@ -292,11 +299,13 @@ class CalibrationController {
     }
 
     companion object {
+        private const val TAG = "RavenEyes.Calibration"
+
         const val PRECHECK_MS = 1000L
         const val OPEN_EYES_MS = 3000L
         const val VALIDATION_MS = 3000L
         const val STEP_TIMEOUT_MS = 30000L
+        const val DOUBLE_BLINK_TIMEOUT_MS = 15000L
         const val MIN_OPEN_SAMPLES = 15
-        private const val TAG = "RavenEyes.Calibration"
     }
 }
