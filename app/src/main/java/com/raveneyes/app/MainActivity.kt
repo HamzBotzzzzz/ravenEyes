@@ -8,6 +8,7 @@ import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
@@ -20,6 +21,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var cameraProvider: ProcessCameraProvider? = null
     private var cameraExecutor: ExecutorService? = null
+    private var analysisExecutor: ExecutorService? = null
+    private var faceAnalyzer: FaceAnalyzer? = null
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -31,11 +34,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             Log.w(TAG, "Camera permission denied")
             val canAskAgain = shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)
-            if (canAskAgain) {
-                showState(State.DENIED)
-            } else {
-                showState(State.PERMANENTLY_DENIED)
-            }
+            showState(if (canAskAgain) State.DENIED else State.PERMANENTLY_DENIED)
         }
     }
 
@@ -45,26 +44,28 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         cameraExecutor = Executors.newSingleThreadExecutor()
+        analysisExecutor = Executors.newSingleThreadExecutor()
+
+        faceAnalyzer = FaceAnalyzer(
+            onResult = { count -> runOnUiThread { updateFaceStatus(count) } },
+            onError = { runOnUiThread { updateFaceStatus(-1) } }
+        )
 
         binding.buttonCameraAction.setOnClickListener {
-    when (currentState) {
-        State.NOT_REQUESTED, State.DENIED ->
-            permissionLauncher.launch(Manifest.permission.CAMERA)
-        State.PERMANENTLY_DENIED ->
-            openAppSettings()
-        State.GRANTED ->
-            startCamera()
-        State.ERROR ->
-            startCamera()
-    }
-}
+            when (currentState) {
+                State.NOT_REQUESTED, State.DENIED ->
+                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                State.PERMANENTLY_DENIED -> openAppSettings()
+                State.GRANTED -> startCamera()
+                State.ERROR -> startCamera()
+            }
+        }
 
         evaluateInitialState()
     }
 
     override fun onResume() {
         super.onResume()
-        // Re-evaluate when returning from Settings or background
         if (currentState == State.GRANTED) {
             startCamera()
         } else {
@@ -74,8 +75,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         cameraProvider?.unbindAll()
+        faceAnalyzer?.close()
+        faceAnalyzer = null
         cameraExecutor?.shutdown()
+        analysisExecutor?.shutdown()
         cameraExecutor = null
+        analysisExecutor = null
         super.onDestroy()
     }
 
@@ -112,11 +117,23 @@ class MainActivity : AppCompatActivity() {
                     it.setSurfaceProvider(binding.previewView.surfaceProvider)
                 }
 
+                val analysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+                    .also { ia ->
+                        val exec = analysisExecutor
+                        val analyzer = faceAnalyzer
+                        if (exec != null && analyzer != null) {
+                            ia.setAnalyzer(exec, analyzer)
+                        }
+                    }
+
                 provider.unbindAll()
                 provider.bindToLifecycle(
                     this,
                     CameraSelector.DEFAULT_FRONT_CAMERA,
-                    preview
+                    preview,
+                    analysis
                 )
 
                 Log.i(TAG, "Camera started")
@@ -128,6 +145,27 @@ class MainActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    private fun updateFaceStatus(faceCount: Int) {
+        when {
+            faceCount < 0 -> {
+                binding.textFaceStatus.text = getString(R.string.face_status_error)
+                binding.textFaceCount.text = ""
+            }
+            faceCount == 0 -> {
+                binding.textFaceStatus.text = getString(R.string.face_status_not_detected)
+                binding.textFaceCount.text = getString(R.string.face_count_format, 0)
+            }
+            faceCount == 1 -> {
+                binding.textFaceStatus.text = getString(R.string.face_status_detected)
+                binding.textFaceCount.text = getString(R.string.face_count_format, 1)
+            }
+            else -> {
+                binding.textFaceStatus.text = getString(R.string.face_status_multiple)
+                binding.textFaceCount.text = getString(R.string.face_count_format, faceCount)
+            }
+        }
+    }
+
     private fun showState(state: State) {
         currentState = state
         binding.buttonCameraAction.visibility = View.VISIBLE
@@ -137,26 +175,35 @@ class MainActivity : AppCompatActivity() {
                 binding.textCameraStatus.text = getString(R.string.camera_status_off)
                 binding.textCameraMessage.text = getString(R.string.camera_permission_required)
                 binding.buttonCameraAction.text = getString(R.string.camera_action_enable)
+                binding.textFaceStatus.text = getString(R.string.face_status_waiting)
+                binding.textFaceCount.text = ""
             }
             State.GRANTED -> {
                 binding.textCameraStatus.text = getString(R.string.camera_status_ready)
                 binding.textCameraMessage.text = getString(R.string.camera_message_preview_active)
                 binding.buttonCameraAction.text = getString(R.string.camera_action_restart)
+                binding.textFaceStatus.text = getString(R.string.face_status_waiting)
             }
             State.DENIED -> {
                 binding.textCameraStatus.text = getString(R.string.camera_status_off)
                 binding.textCameraMessage.text = getString(R.string.camera_permission_denied)
                 binding.buttonCameraAction.text = getString(R.string.camera_action_try_again)
+                binding.textFaceStatus.text = getString(R.string.face_status_waiting)
+                binding.textFaceCount.text = ""
             }
             State.PERMANENTLY_DENIED -> {
                 binding.textCameraStatus.text = getString(R.string.camera_status_off)
                 binding.textCameraMessage.text = getString(R.string.camera_permission_disabled)
                 binding.buttonCameraAction.text = getString(R.string.camera_action_open_settings)
+                binding.textFaceStatus.text = getString(R.string.face_status_waiting)
+                binding.textFaceCount.text = ""
             }
             State.ERROR -> {
                 binding.textCameraStatus.text = getString(R.string.camera_status_error)
                 binding.textCameraMessage.text = getString(R.string.camera_message_error)
                 binding.buttonCameraAction.text = getString(R.string.camera_action_try_again)
+                binding.textFaceStatus.text = getString(R.string.face_status_error)
+                binding.textFaceCount.text = ""
             }
         }
     }
