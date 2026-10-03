@@ -9,6 +9,8 @@ import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
+import android.provider.Settings
+import com.raveneyes.app.accessibility.AccessibilityStatus
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -102,6 +104,17 @@ class MainActivity : AppCompatActivity() {
                 Log.i(TAG, "Calibration cleared")
             }
         }
+        
+        binding.buttonAccessibility.setOnClickListener {
+    if (AccessibilityStatus.isServiceEnabled(this)) {
+        // already enabled: buka Settings juga (opsional, sesuai instruksi tetap bisa buka)
+        openAccessibilitySettings()
+    } else {
+        openAccessibilitySettings()
+    }
+}
+
+refreshAccessibilityStatus()
 
         binding.buttonCameraAction.setOnClickListener {
             when (currentState) {
@@ -118,13 +131,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onResume() {
-        super.onResume()
-        if (currentState == State.GRANTED) {
-            startCamera()
-        } else {
-            evaluateInitialState()
-        }
+    super.onResume()
+    refreshAccessibilityStatus()
+    if (currentState == State.GRANTED) {
+        startCamera()
+    } else {
+        evaluateInitialState()
     }
+}
 
     override fun onStop() {
         super.onStop()
@@ -362,6 +376,34 @@ class MainActivity : AppCompatActivity() {
         FaceAnalyzer.EyeState.CLOSED -> BlinkDetector.EyeState.CLOSED
         FaceAnalyzer.EyeState.UNKNOWN -> BlinkDetector.EyeState.UNKNOWN
     }
+    
+    private fun openAccessibilitySettings() {
+    try {
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+    } catch (t: Throwable) {
+        Log.e(TAG, "Failed to open accessibility settings", t)
+    }
+}
+
+private fun refreshAccessibilityStatus() {
+    val enabled = AccessibilityStatus.isServiceEnabled(this)
+    if (enabled) {
+        binding.textAccessibilityStatus.text =
+            getString(R.string.accessibility_status_enabled)
+        binding.buttonAccessibility.text =
+            getString(R.string.accessibility_action_open_settings)
+        binding.textAccessibilityHint.visibility = View.GONE
+    } else {
+        binding.textAccessibilityStatus.text =
+            getString(R.string.accessibility_status_disabled)
+        binding.buttonAccessibility.text =
+            getString(R.string.accessibility_action_enable)
+        binding.textAccessibilityHint.visibility = View.VISIBLE
+    }
+    Log.i(TAG, "Accessibility enabled=$enabled")
+}
 
     private enum class State {
         NOT_REQUESTED,
