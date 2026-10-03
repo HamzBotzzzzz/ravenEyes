@@ -238,8 +238,8 @@ class CalibrationController {
         val (valid, req) = when (step) {
             Step.OPEN_EYES -> openEyeLeftSamples.size to MIN_OPEN_SAMPLES
             Step.BLINK -> blinkDurations.size to 3
-            Step.LONG_CLOSURE -> if (longClosureMs > 0) 1 else 0 to 1
-            Step.DOUBLE_BLINK -> if (interBlinkMs > 0) 1 else 0 to 1
+            Step.LONG_CLOSURE -> (if (longClosureMs > 0) 1 else 0) to 1
+            Step.DOUBLE_BLINK -> (if (interBlinkMs > 0) 1 else 0) to 1
             else -> 0 to 0
         }
         val progress = when (step) {
@@ -299,4 +299,4 @@ class CalibrationController {
         const val MIN_OPEN_SAMPLES = 15
         private const val TAG = "RavenEyes.Calibration"
     }
-}
+        }

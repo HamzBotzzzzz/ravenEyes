@@ -17,7 +17,7 @@ class BlinkDetector {
     val lastEvent: Event?,
     val lastBlinkAtMs: Long,
     val previousBlinkAtMs: Long
-)
+        )
 
     enum class Event {
         BLINK,
@@ -35,6 +35,9 @@ class BlinkDetector {
 
     private var sequenceCount: Int = 0
     private var lastBlinkAtMs: Long = 0L
+
+    private var lastBlinkAtMs: Long = 0L
+    private var previousBlinkAtMs: Long = 0L
 
     fun reset() {
         state = BlinkState.UNKNOWN
@@ -178,10 +181,10 @@ class BlinkDetector {
             lastBlinkDurationMs = lastBlinkDurationMs,
             currentClosureMs = currentClosure,
             sequenceCount = sequenceCount,
-            lastEvent = event
+            lastEvent = event,
+            lastBlinkAtMs = lastBlinkAtMs,
+            previousBlinkAtMs = previousBlinkAtMs
         )
-    }
-
     companion object {
         private const val TAG = "RavenEyes.Blink"
 
