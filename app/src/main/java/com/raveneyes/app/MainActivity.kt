@@ -23,6 +23,7 @@ class MainActivity : AppCompatActivity() {
     private var cameraExecutor: ExecutorService? = null
     private var analysisExecutor: ExecutorService? = null
     private var faceAnalyzer: FaceAnalyzer? = null
+    private lateinit var blinkDetector: BlinkDetector
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -45,11 +46,44 @@ class MainActivity : AppCompatActivity() {
 
         cameraExecutor = Executors.newSingleThreadExecutor()
         analysisExecutor = Executors.newSingleThreadExecutor()
+        blinkDetector = BlinkDetector()
 
         faceAnalyzer = FaceAnalyzer(
-            onResult = { snapshot -> runOnUiThread { updateFaceAndEyeStatus(snapshot) } },
-            onError = { runOnUiThread { updateFaceError() } }
+            onResult = { snapshot ->
+                val now = System.currentTimeMillis()
+                val left = snapshot.leftEye.toBlinkEye()
+                val right = snapshot.rightEye.toBlinkEye()
+                val output = blinkDetector.update(
+                    leftState = left,
+                    rightState = right,
+                    faceCount = snapshot.faceCount,
+                    nowMs = now
+                )
+                runOnUiThread {
+                    updateFaceAndEyeStatus(snapshot)
+                    updateBlinkStatus(output)
+                }
+            },
+            onError = { runOnUiThread {
+                updateFaceError()
+                updateBlinkStatus(blinkDetector.update(
+                    leftState = BlinkDetector.EyeState.UNKNOWN,
+                    rightState = BlinkDetector.EyeState.UNKNOWN,
+                    faceCount = 0,
+                    nowMs = System.currentTimeMillis()
+                ))
+            } }
         )
+
+        binding.buttonResetBlink.setOnClickListener {
+            blinkDetector.reset()
+            updateBlinkStatus(blinkDetector.update(
+                leftState = BlinkDetector.EyeState.UNKNOWN,
+                rightState = BlinkDetector.EyeState.UNKNOWN,
+                faceCount = 0,
+                nowMs = System.currentTimeMillis()
+            ))
+        }
 
         binding.buttonCameraAction.setOnClickListener {
             when (currentState) {
@@ -71,6 +105,11 @@ class MainActivity : AppCompatActivity() {
         } else {
             evaluateInitialState()
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        blinkDetector.onFaceLost()
     }
 
     override fun onDestroy() {
@@ -190,6 +229,28 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateBlinkStatus(output: BlinkDetector.Output) {
+        val stateText = when (output.blinkState) {
+            BlinkDetector.BlinkState.OPEN -> getString(R.string.blink_state_open)
+            BlinkDetector.BlinkState.CLOSED -> getString(R.string.blink_state_closed)
+            BlinkDetector.BlinkState.UNKNOWN -> getString(R.string.blink_state_unknown)
+        }
+        binding.textBlinkState.text = getString(R.string.blink_state_format, stateText)
+        binding.textBlinkCount.text = getString(R.string.blink_count_format, output.blinkCount)
+
+        binding.textLastBlink.text = output.lastBlinkDurationMs?.let {
+            getString(R.string.blink_last_format, it)
+        } ?: ""
+
+        binding.textClosureOrSequence.text = when {
+            output.currentClosureMs != null ->
+                getString(R.string.blink_current_closure_format, output.currentClosureMs)
+            output.sequenceCount > 0 ->
+                getString(R.string.blink_sequence_format, output.sequenceCount)
+            else -> ""
+        }
+    }
+
     private fun formatEye(label: String, state: FaceAnalyzer.EyeState): String {
         val stateText = when (state) {
             FaceAnalyzer.EyeState.OPEN -> getString(R.string.eye_state_open)
@@ -263,6 +324,12 @@ class MainActivity : AppCompatActivity() {
                 resetEyeViews()
             }
         }
+    }
+
+    private fun FaceAnalyzer.EyeState.toBlinkEye(): BlinkDetector.EyeState = when (this) {
+        FaceAnalyzer.EyeState.OPEN -> BlinkDetector.EyeState.OPEN
+        FaceAnalyzer.EyeState.CLOSED -> BlinkDetector.EyeState.CLOSED
+        FaceAnalyzer.EyeState.UNKNOWN -> BlinkDetector.EyeState.UNKNOWN
     }
 
     private enum class State {

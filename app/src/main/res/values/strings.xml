@@ -40,4 +40,19 @@
 
 <string name="eye_prob_left_format">L prob: %.2f</string>
 <string name="eye_prob_right_format">R prob: %.2f</string>
+
+<string name="blink_state_format">Blink State: %1$s</string>
+<string name="blink_state_format_default">Blink State: UNKNOWN</string>
+<string name="blink_state_open">OPEN</string>
+<string name="blink_state_closed">CLOSED</string>
+<string name="blink_state_unknown">UNKNOWN</string>
+
+<string name="blink_count_format">Blink Count: %1$d</string>
+<string name="blink_count_default">Blink Count: 0</string>
+
+<string name="blink_last_format">Last Blink: %1$d ms</string>
+<string name="blink_current_closure_format">Current Closure: %1$d ms</string>
+<string name="blink_sequence_format">Sequence: %1$d</string>
+
+<string name="blink_reset">RESET BLINK COUNT</string>
 </resources>
