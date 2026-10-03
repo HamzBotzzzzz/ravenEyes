@@ -1,71 +1,82 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="32dp"
-    android:background="@color/raven_background">
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/main_title"
-        android:textColor="@color/raven_text_primary"
-        android:textSize="32sp"
-        android:textStyle="bold"
-        android:letterSpacing="0.2" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/main_subtitle"
-        android:textColor="@color/raven_text_secondary"
-        android:textSize="14sp" />
-
-    <View
-        android:layout_width="120dp"
-        android:layout_height="1dp"
-        android:layout_marginTop="32dp"
-        android:background="@color/raven_surface" />
+    android:background="@color/raven_background"
+    android:fillViewport="true">
 
     <LinearLayout
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="32dp"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:padding="24dp">
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="✓ Application"
-            android:textColor="@color/raven_success"
-            android:textSize="16sp" />
+            android:layout_marginTop="16dp"
+            android:text="@string/main_title"
+            android:textColor="@color/raven_text_primary"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.2" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="✓ Main Activity"
-            android:textColor="@color/raven_success"
-            android:textSize="16sp" />
+            android:layout_marginTop="4dp"
+            android:text="@string/main_subtitle"
+            android:textColor="@color/raven_text_secondary"
+            android:textSize="13sp" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="24dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:background="@color/raven_surface"
+            app:layout_constraintDimensionRatio="1:1"
+            android:id="@+id/previewContainer"
+            android:layout_weight="1">
+
+            <androidx.camera.view.PreviewView
+                android:id="@+id/previewView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                app:scaleType="fillCenter" />
+
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/textCameraStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/camera_status_off"
+            android:textColor="@color/raven_accent"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/textCameraMessage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:text="@string/camera_permission_required"
+            android:textColor="@color/raven_text_secondary"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/buttonCameraAction"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="16dp"
+            android:text="@string/camera_action_enable" />
+
     </LinearLayout>
-
-    <View
-        android:layout_width="120dp"
-        android:layout_height="1dp"
-        android:layout_marginTop="32dp"
-        android:background="@color/raven_surface" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="32dp"
-        android:text="@string/status_ready"
-        android:textColor="@color/raven_accent"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:letterSpacing="0.1" />
-
-</LinearLayout>
+</ScrollView>
