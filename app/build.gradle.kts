@@ -31,8 +31,9 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = "17"
-    }
+    jvmTarget = "17"
+    freeCompilerArgs += "-opt-in=androidx.camera.core.ExperimentalGetImage"
+}
 
     buildFeatures {
         viewBinding = true
