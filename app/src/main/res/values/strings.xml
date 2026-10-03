@@ -55,4 +55,9 @@
 <string name="blink_sequence_format">Sequence: %1$d</string>
 
 <string name="blink_reset">RESET BLINK COUNT</string>
+
+<string name="calibration_status_required">Calibration: REQUIRED</string>
+<string name="calibration_status_ready">Calibration: READY ✓</string>
+<string name="calibration_action_open">CALIBRATION</string>
+<string name="calibration_action_reset">RESET CALIBRATION</string>
 </resources>

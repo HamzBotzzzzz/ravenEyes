@@ -9,13 +9,15 @@ class BlinkDetector {
     enum class BlinkState { OPEN, CLOSED, UNKNOWN }
 
     data class Output(
-        val blinkState: BlinkState,
-        val blinkCount: Int,
-        val lastBlinkDurationMs: Long?,
-        val currentClosureMs: Long?,
-        val sequenceCount: Int,
-        val lastEvent: Event?
-    )
+    val blinkState: BlinkState,
+    val blinkCount: Int,
+    val lastBlinkDurationMs: Long?,
+    val currentClosureMs: Long?,
+    val sequenceCount: Int,
+    val lastEvent: Event?,
+    val lastBlinkAtMs: Long,
+    val previousBlinkAtMs: Long
+)
 
     enum class Event {
         BLINK,
@@ -117,9 +119,11 @@ class BlinkDetector {
 
                     when {
                         durationMs in MIN_CLOSED_MS..MAX_BLINK_MS -> {
-                            blinkCount++
-                            lastBlinkDurationMs = durationMs
-
+    blinkCount++
+    lastBlinkDurationMs = durationMs
+    previousBlinkAtMs = lastBlinkAtMs
+    lastBlinkAtMs = nowMs
+    
                             if (lastBlinkAtMs == 0L || nowMs - lastBlinkAtMs > SEQUENCE_WINDOW_MS) {
                                 sequenceCount = 1
                             } else {
@@ -142,12 +146,12 @@ class BlinkDetector {
                             }
                         }
                         durationMs >= LONG_CLOSURE_MS -> {
-                            event = Event.LONG_CLOSURE
-                            Log.i(TAG, "Long Closure detected, duration=$durationMs ms")
-                            // long closure mereset sequence
-                            sequenceCount = 0
-                            lastBlinkAtMs = 0L
-                        }
+    event = Event.LONG_CLOSURE
+    lastBlinkDurationMs = durationMs     // <— tambahan
+    Log.i(TAG, "Long Closure detected, duration=$durationMs ms")
+    sequenceCount = 0
+    lastBlinkAtMs = 0L
+}
                         // di antara MAX_BLINK_MS dan LONG_CLOSURE_MS: diabaikan
                     }
                 }
