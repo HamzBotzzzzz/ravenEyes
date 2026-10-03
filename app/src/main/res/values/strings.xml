@@ -28,4 +28,16 @@
 <string name="face_status_multiple">Face: MULTIPLE FACES</string>
 <string name="face_status_error">Face: ERROR</string>
 <string name="face_count_format">Faces detected: %1$d</string>
+
+<string name="eye_label_left">Left Eye</string>
+<string name="eye_label_right">Right Eye</string>
+<string name="eye_label_unknown">Eyes: UNKNOWN</string>
+<string name="eye_label_multiple">Eyes: MULTIPLE FACES</string>
+
+<string name="eye_state_open">OPEN</string>
+<string name="eye_state_closed">CLOSED</string>
+<string name="eye_state_unknown">UNKNOWN</string>
+
+<string name="eye_prob_left_format">L prob: %.2f</string>
+<string name="eye_prob_right_format">R prob: %.2f</string>
 </resources>

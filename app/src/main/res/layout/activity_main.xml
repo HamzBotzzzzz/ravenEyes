@@ -88,6 +88,42 @@
     android:text=""
     android:textColor="@color/raven_text_secondary"
     android:textSize="13sp" />
+    
+    <TextView
+    android:id="@+id/textLeftEye"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp"
+    android:text="@string/eye_label_left"
+    android:textColor="@color/raven_text_primary"
+    android:textSize="15sp" />
+
+<TextView
+    android:id="@+id/textRightEye"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="4dp"
+    android:text="@string/eye_label_right"
+    android:textColor="@color/raven_text_primary"
+    android:textSize="15sp" />
+
+<TextView
+    android:id="@+id/textLeftProb"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="6dp"
+    android:text=""
+    android:textColor="@color/raven_text_secondary"
+    android:textSize="12sp" />
+
+<TextView
+    android:id="@+id/textRightProb"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="2dp"
+    android:text=""
+    android:textColor="@color/raven_text_secondary"
+    android:textSize="12sp" />
 
         <Button
             android:id="@+id/buttonCameraAction"

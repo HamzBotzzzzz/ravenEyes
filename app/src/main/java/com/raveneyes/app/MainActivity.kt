@@ -47,8 +47,8 @@ class MainActivity : AppCompatActivity() {
         analysisExecutor = Executors.newSingleThreadExecutor()
 
         faceAnalyzer = FaceAnalyzer(
-            onResult = { count -> runOnUiThread { updateFaceStatus(count) } },
-            onError = { runOnUiThread { updateFaceStatus(-1) } }
+            onResult = { snapshot -> runOnUiThread { updateFaceAndEyeStatus(snapshot) } },
+            onError = { runOnUiThread { updateFaceError() } }
         )
 
         binding.buttonCameraAction.setOnClickListener {
@@ -145,25 +145,78 @@ class MainActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
-    private fun updateFaceStatus(faceCount: Int) {
+    private fun updateFaceAndEyeStatus(snapshot: FaceAnalyzer.FaceSnapshot) {
+        val count = snapshot.faceCount
         when {
-            faceCount < 0 -> {
-                binding.textFaceStatus.text = getString(R.string.face_status_error)
-                binding.textFaceCount.text = ""
-            }
-            faceCount == 0 -> {
+            count == 0 -> {
                 binding.textFaceStatus.text = getString(R.string.face_status_not_detected)
                 binding.textFaceCount.text = getString(R.string.face_count_format, 0)
             }
-            faceCount == 1 -> {
+            count == 1 -> {
                 binding.textFaceStatus.text = getString(R.string.face_status_detected)
                 binding.textFaceCount.text = getString(R.string.face_count_format, 1)
             }
             else -> {
                 binding.textFaceStatus.text = getString(R.string.face_status_multiple)
-                binding.textFaceCount.text = getString(R.string.face_count_format, faceCount)
+                binding.textFaceCount.text = getString(R.string.face_count_format, count)
             }
         }
+
+        when {
+            count == 0 -> {
+                binding.textLeftEye.text = getString(R.string.eye_label_unknown)
+                binding.textRightEye.text = getString(R.string.eye_label_unknown)
+                binding.textLeftProb.text = ""
+                binding.textRightProb.text = ""
+            }
+            count >= 2 -> {
+                binding.textLeftEye.text = getString(R.string.eye_label_multiple)
+                binding.textRightEye.text = ""
+                binding.textLeftProb.text = ""
+                binding.textRightProb.text = ""
+            }
+            else -> {
+                binding.textLeftEye.text = formatEye(getString(R.string.eye_label_left), snapshot.leftEye)
+                binding.textRightEye.text = formatEye(getString(R.string.eye_label_right), snapshot.rightEye)
+                binding.textLeftProb.text = formatProb(
+                    getString(R.string.eye_prob_left_format),
+                    snapshot.leftProbability
+                )
+                binding.textRightProb.text = formatProb(
+                    getString(R.string.eye_prob_right_format),
+                    snapshot.rightProbability
+                )
+            }
+        }
+    }
+
+    private fun formatEye(label: String, state: FaceAnalyzer.EyeState): String {
+        val stateText = when (state) {
+            FaceAnalyzer.EyeState.OPEN -> getString(R.string.eye_state_open)
+            FaceAnalyzer.EyeState.CLOSED -> getString(R.string.eye_state_closed)
+            FaceAnalyzer.EyeState.UNKNOWN -> getString(R.string.eye_state_unknown)
+        }
+        return "$label: $stateText"
+    }
+
+    private fun formatProb(format: String, value: Float?): String {
+        return if (value == null) "" else String.format(format, value)
+    }
+
+    private fun updateFaceError() {
+        binding.textFaceStatus.text = getString(R.string.face_status_error)
+        binding.textFaceCount.text = ""
+        binding.textLeftEye.text = getString(R.string.eye_label_unknown)
+        binding.textRightEye.text = getString(R.string.eye_label_unknown)
+        binding.textLeftProb.text = ""
+        binding.textRightProb.text = ""
+    }
+
+    private fun resetEyeViews() {
+        binding.textLeftEye.text = getString(R.string.eye_label_unknown)
+        binding.textRightEye.text = getString(R.string.eye_label_unknown)
+        binding.textLeftProb.text = ""
+        binding.textRightProb.text = ""
     }
 
     private fun showState(state: State) {
@@ -177,6 +230,7 @@ class MainActivity : AppCompatActivity() {
                 binding.buttonCameraAction.text = getString(R.string.camera_action_enable)
                 binding.textFaceStatus.text = getString(R.string.face_status_waiting)
                 binding.textFaceCount.text = ""
+                resetEyeViews()
             }
             State.GRANTED -> {
                 binding.textCameraStatus.text = getString(R.string.camera_status_ready)
@@ -190,6 +244,7 @@ class MainActivity : AppCompatActivity() {
                 binding.buttonCameraAction.text = getString(R.string.camera_action_try_again)
                 binding.textFaceStatus.text = getString(R.string.face_status_waiting)
                 binding.textFaceCount.text = ""
+                resetEyeViews()
             }
             State.PERMANENTLY_DENIED -> {
                 binding.textCameraStatus.text = getString(R.string.camera_status_off)
@@ -197,6 +252,7 @@ class MainActivity : AppCompatActivity() {
                 binding.buttonCameraAction.text = getString(R.string.camera_action_open_settings)
                 binding.textFaceStatus.text = getString(R.string.face_status_waiting)
                 binding.textFaceCount.text = ""
+                resetEyeViews()
             }
             State.ERROR -> {
                 binding.textCameraStatus.text = getString(R.string.camera_status_error)
@@ -204,6 +260,7 @@ class MainActivity : AppCompatActivity() {
                 binding.buttonCameraAction.text = getString(R.string.camera_action_try_again)
                 binding.textFaceStatus.text = getString(R.string.face_status_error)
                 binding.textFaceCount.text = ""
+                resetEyeViews()
             }
         }
     }
