@@ -9,12 +9,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.graphics.SurfaceTexture
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import android.view.Surface
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -28,7 +32,6 @@ import com.raveneyes.app.calibration.CalibrationStore
 import com.raveneyes.app.gesture.GestureEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +40,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 
 class RavenEyesCameraService : Service(), LifecycleOwner {
 
@@ -49,6 +53,13 @@ class RavenEyesCameraService : Service(), LifecycleOwner {
     private var blinkDetector: BlinkDetector? = null
     private var gestureEngine: GestureEngine? = null
     private var calibrationReady: Boolean = false
+
+    // Offscreen preview resources
+    private var previewSurfaceTexture: SurfaceTexture? = null
+    private var previewSurface: Surface? = null
+
+    private val frameCounter = AtomicLong(0L)
+    private var lastLoggedFrameCount: Long = 0L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -65,20 +76,20 @@ class RavenEyesCameraService : Service(), LifecycleOwner {
 
     override fun onCreate() {
         super.onCreate()
-        Log.i(TAG, "Service onCreate")
+        Log.i(TAG, "SERVICE_CREATED")
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.i(TAG, "Service onStartCommand")
+        Log.i(TAG, "SERVICE_STARTED")
 
         val cameraGranted = ContextCompat.checkSelfPermission(
             this, Manifest.permission.CAMERA
         ) == PackageManager.PERMISSION_GRANTED
 
         if (!cameraGranted) {
-            Log.e(TAG, "Camera permission missing; stopping service")
+            Log.e(TAG, "CAMERA_PIPELINE_ERROR: camera permission missing")
             _status.value = _status.value.copy(
                 state = ServiceState.ERROR,
                 errorMessage = "Camera permission required"
@@ -92,7 +103,7 @@ class RavenEyesCameraService : Service(), LifecycleOwner {
         try {
             startForegroundInternal()
         } catch (t: Throwable) {
-            Log.e(TAG, "Failed to startForeground", t)
+            Log.e(TAG, "CAMERA_PIPELINE_ERROR: startForeground failed", t)
             _status.value = _status.value.copy(
                 state = ServiceState.ERROR,
                 errorMessage = "Failed to start foreground: ${t.message}"
@@ -101,40 +112,40 @@ class RavenEyesCameraService : Service(), LifecycleOwner {
             return START_NOT_STICKY
         }
 
-        // lifecycle -> RESUMED supaya CameraX boleh bind
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
-
         startPipeline()
         return START_NOT_STICKY
     }
 
     private fun startForegroundInternal() {
         val notification = buildNotification()
-        if (Build.VERSION.SDK_INT >= 29) {
+        if (Build.VERSION.SDK_INT >= 30) {
             startForeground(
                 NOTIFICATION_ID,
                 notification,
-                if (Build.VERSION.SDK_INT >= 30) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-                else 0
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
             )
+        } else if (Build.VERSION.SDK_INT >= 29) {
+            startForeground(NOTIFICATION_ID, notification)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
     }
 
     private fun startPipeline() {
+        Log.i(TAG, "CAMERA_PIPELINE_STARTING")
+
         analysisExecutor = Executors.newSingleThreadExecutor()
         blinkDetector = BlinkDetector()
         gestureEngine = GestureEngine()
 
-        // Baca calibration readiness sekali untuk state awal
         scope.launch {
             try {
                 CalibrationStore(applicationContext).calibrationFlow.collect { data ->
                     calibrationReady = data != null && data.isValid()
                 }
             } catch (t: Throwable) {
-                Log.e(TAG, "Calibration observer error", t)
+                Log.e(TAG, "CAMERA_PIPELINE_ERROR: calibration observer", t)
             }
         }
 
@@ -144,15 +155,51 @@ class RavenEyesCameraService : Service(), LifecycleOwner {
                 val provider = providerFuture.get()
                 cameraProvider = provider
 
+                // ---- Preview offscreen ----
+                val st = SurfaceTexture(0).apply {
+                    setDefaultBufferSize(PREVIEW_DUMMY_WIDTH, PREVIEW_DUMMY_HEIGHT)
+                }
+                val surface = Surface(st)
+                previewSurfaceTexture = st
+                previewSurface = surface
+
+                val preview = Preview.Builder()
+                    .setTargetResolution(android.util.Size(PREVIEW_DUMMY_WIDTH, PREVIEW_DUMMY_HEIGHT))
+                    .build()
+                preview.setSurfaceProvider { request ->
+                    try {
+                        request.provideSurface(
+                            surface,
+                            ContextCompat.getMainExecutor(this@RavenEyesCameraService)
+                        ) {
+                            // Callback ketika surface dirilis oleh CameraX.
+                            // Kita tidak menutup surface di sini karena kita
+                            // menutupnya di onDestroy untuk mencegah double-close.
+                        }
+                    } catch (t: Throwable) {
+                        Log.e(TAG, "CAMERA_PIPELINE_ERROR: provideSurface", t)
+                    }
+                }
+
+                // ---- ImageAnalysis ----
                 val analysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
 
-                val exec = analysisExecutor ?: return@addListener
-                val detector = blinkDetector ?: return@addListener
-                val gesture = gestureEngine ?: return@addListener
+                val exec = analysisExecutor ?: run {
+                    Log.e(TAG, "CAMERA_PIPELINE_ERROR: executor null")
+                    return@addListener
+                }
+                val detector = blinkDetector ?: run {
+                    Log.e(TAG, "CAMERA_PIPELINE_ERROR: blinkDetector null")
+                    return@addListener
+                }
+                val gesture = gestureEngine ?: run {
+                    Log.e(TAG, "CAMERA_PIPELINE_ERROR: gestureEngine null")
+                    return@addListener
+                }
 
-                val analyzer = FaceAnalyzer(
+                val realAnalyzer = FaceAnalyzer(
                     onResult = { snapshot ->
                         val now = System.currentTimeMillis()
                         val blinkOut = detector.update(
@@ -175,21 +222,43 @@ class RavenEyesCameraService : Service(), LifecycleOwner {
                             lastActionAtMs = gestureResult.lastActionAtMs
                         )
                     },
-                    onError = { t -> Log.e(TAG, "Analyzer error", t) }
+                    onError = { t -> Log.e(TAG, "CAMERA_PIPELINE_ERROR: analyzer", t) }
                 )
-                faceAnalyzer = analyzer
+                faceAnalyzer = realAnalyzer
 
-                analysis.setAnalyzer(exec, analyzer)
+                // Frame-counting wrapper
+                val countingAnalyzer = ImageAnalysis.Analyzer { imageProxy: ImageProxy ->
+                    try {
+                        val count = frameCounter.incrementAndGet()
+                        if (count - lastLoggedFrameCount >= FRAME_LOG_INTERVAL) {
+                            lastLoggedFrameCount = count
+                            Log.i(TAG, "ANALYSIS_FRAME count=$count")
+                        }
+                        realAnalyzer.analyze(imageProxy)
+                    } catch (t: Throwable) {
+                        Log.e(TAG, "CAMERA_PIPELINE_ERROR: analyze wrapper", t)
+                        try {
+                            imageProxy.close()
+                        } catch (ignore: Throwable) {
+                        }
+                    }
+                }
+
+                analysis.setAnalyzer(exec, countingAnalyzer)
+
                 provider.unbindAll()
                 provider.bindToLifecycle(
                     this@RavenEyesCameraService,
                     CameraSelector.DEFAULT_FRONT_CAMERA,
+                    preview,
                     analysis
                 )
-                Log.i(TAG, "Camera pipeline READY")
+
+                Log.i(TAG, "CAMERA_PIPELINE_READY (preview+analysis bound)")
                 _status.value = _status.value.copy(state = ServiceState.RUNNING)
+
             } catch (t: Throwable) {
-                Log.e(TAG, "Camera pipeline error", t)
+                Log.e(TAG, "CAMERA_PIPELINE_ERROR", t)
                 _status.value = _status.value.copy(
                     state = ServiceState.ERROR,
                     errorMessage = "Camera pipeline error: ${t.message}"
@@ -199,17 +268,34 @@ class RavenEyesCameraService : Service(), LifecycleOwner {
     }
 
     override fun onDestroy() {
-        Log.i(TAG, "Service onDestroy")
+        Log.i(TAG, "SERVICE_DESTROYED")
+
         try {
             cameraProvider?.unbindAll()
         } catch (t: Throwable) {
             Log.w(TAG, "unbindAll error", t)
         }
         cameraProvider = null
+
         faceAnalyzer?.close()
         faceAnalyzer = null
         blinkDetector = null
         gestureEngine = null
+
+        try {
+            previewSurface?.release()
+        } catch (t: Throwable) {
+            Log.w(TAG, "surface release error", t)
+        }
+        previewSurface = null
+
+        try {
+            previewSurfaceTexture?.release()
+        } catch (t: Throwable) {
+            Log.w(TAG, "surfaceTexture release error", t)
+        }
+        previewSurfaceTexture = null
+
         analysisExecutor?.shutdown()
         analysisExecutor = null
 
@@ -254,6 +340,9 @@ class RavenEyesCameraService : Service(), LifecycleOwner {
         private const val TAG = "RavenEyes.Service"
         private const val CHANNEL_ID = "raven_eyes_camera"
         private const val NOTIFICATION_ID = 1001
+        private const val PREVIEW_DUMMY_WIDTH = 320
+        private const val PREVIEW_DUMMY_HEIGHT = 240
+        private const val FRAME_LOG_INTERVAL = 60L  // ~1 detik pada 60fps efektif
 
         fun start(context: Context) {
             val intent = Intent(context, RavenEyesCameraService::class.java)
