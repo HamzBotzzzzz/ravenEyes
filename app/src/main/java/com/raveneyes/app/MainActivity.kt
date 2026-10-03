@@ -19,6 +19,8 @@ import androidx.lifecycle.lifecycleScope
 import com.raveneyes.app.calibration.CalibrationStore
 import com.raveneyes.app.databinding.ActivityMainBinding
 import kotlinx.coroutines.flow.collectLatest
+import com.raveneyes.app.gesture.GestureAction
+import com.raveneyes.app.gesture.GestureEngine
 import kotlinx.coroutines.launch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -32,6 +34,8 @@ class MainActivity : AppCompatActivity() {
     private var faceAnalyzer: FaceAnalyzer? = null
     private lateinit var blinkDetector: BlinkDetector
     private lateinit var calibrationStore: CalibrationStore
+    private val gestureEngine = GestureEngine()
+private var calibrationReady: Boolean = false
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -83,6 +87,43 @@ class MainActivity : AppCompatActivity() {
                 ))
             } }
         )
+        
+        val gestureResult = gestureEngine.process(
+    output = blinkOutput,
+    calibrationReady = calibrationReady,
+    nowMs = now
+)
+runOnUiThread {
+    updateFaceAndEyeStatus(snapshot)
+    updateBlinkStatus(blinkOutput)
+    refreshGestureDebug(gestureResult)
+}
+
+private fun refreshGestureDebug(result: GestureEngine.Result?) {
+    binding.textGestureEngine.text = getString(R.string.gesture_status_ready)
+
+    if (result != null) {
+        binding.textGestureLastAction.text = getString(
+            R.string.gesture_last_action_format,
+            result.lastAction.name
+        )
+        binding.textGestureLastAt.text = result.lastActionAtMs?.let {
+            getString(R.string.gesture_last_at_format, it)
+        } ?: ""
+        binding.textGestureCooldown.text = getString(
+            R.string.gesture_cooldown_format,
+            if (result.cooldown) "COOLDOWN" else "READY"
+        )
+    } else {
+        binding.textGestureLastAction.text = getString(
+            R.string.gesture_last_action_format, "NONE"
+        )
+        binding.textGestureLastAt.text = ""
+        binding.textGestureCooldown.text = getString(
+            R.string.gesture_cooldown_format, "READY"
+        )
+    }
+}
 
         binding.buttonResetBlink.setOnClickListener {
             blinkDetector.reset()
@@ -129,6 +170,29 @@ refreshAccessibilityStatus()
         observeCalibration()
         evaluateInitialState()
     }
+    
+    lifecycleScope.launch {
+    CalibrationStore(applicationContext).calibrationFlow.collect { data ->
+        calibrationReady = data != null && data.isValid()
+        runOnUiThread { refreshCalibrationStatus() }
+    }
+}
+
+private fun refreshCalibrationStatus() {
+    binding.textCalibrationStatus.text = if (calibrationReady)
+        getString(R.string.calibration_status_ready)
+    else
+        getString(R.string.calibration_status_required)
+}
+
+binding.buttonTestScroll.setOnClickListener {
+    gestureEngine.triggerTestScroll(System.currentTimeMillis())
+    refreshGestureDebug(null)
+}
+binding.buttonTestLike.setOnClickListener {
+    gestureEngine.triggerTestLike(System.currentTimeMillis())
+    refreshGestureDebug(null)
+}
 
     override fun onResume() {
     super.onResume()
@@ -141,9 +205,9 @@ refreshAccessibilityStatus()
 }
 
     override fun onStop() {
-        super.onStop()
-        blinkDetector.onFaceLost()
-    }
+    super.onStop()
+    gestureEngine.onLifecyclePause()
+}
 
     override fun onDestroy() {
         cameraProvider?.unbindAll()

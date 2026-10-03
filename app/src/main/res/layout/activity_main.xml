@@ -158,6 +158,66 @@
     android:text=""
     android:textColor="@color/raven_text_secondary"
     android:textSize="13sp" />
+    
+    <View
+    android:layout_width="120dp"
+    android:layout_height="1dp"
+    android:layout_marginTop="12dp"
+    android:background="@color/raven_surface" />
+
+<TextView
+    android:id="@+id/textGestureEngine"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="12dp"
+    android:text="@string/gesture_status_ready"
+    android:textColor="@color/raven_accent"
+    android:textSize="15sp"
+    android:textStyle="bold" />
+
+<TextView
+    android:id="@+id/textGestureLastAction"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="4dp"
+    android:textColor="@color/raven_text_primary"
+    android:textSize="14sp" />
+
+<TextView
+    android:id="@+id/textGestureLastAt"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="2dp"
+    android:textColor="@color/raven_text_secondary"
+    android:textSize="12sp" />
+
+<TextView
+    android:id="@+id/textGestureCooldown"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="2dp"
+    android:textColor="@color/raven_text_secondary"
+    android:textSize="12sp" />
+
+<LinearLayout
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp"
+    android:orientation="horizontal">
+
+    <Button
+        android:id="@+id/buttonTestScroll"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/gesture_test_scroll" />
+
+    <Button
+        android:id="@+id/buttonTestLike"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:text="@string/gesture_test_like" />
+</LinearLayout>
 
 <TextView
     android:id="@+id/textClosureOrSequence"
