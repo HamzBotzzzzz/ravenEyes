@@ -299,4 +299,4 @@ class CalibrationController {
         const val MIN_OPEN_SAMPLES = 15
         private const val TAG = "RavenEyes.Calibration"
     }
-        }
+}
