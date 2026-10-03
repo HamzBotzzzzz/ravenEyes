@@ -9,7 +9,6 @@ import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
-import android.content.Intent
 import android.provider.Settings
 import com.raveneyes.app.accessibility.AccessibilityStatus
 import androidx.camera.core.ImageAnalysis
