@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.RavenEyes" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:windowBackground">@color/raven_background</item>
+        <item name="android:statusBarColor">@color/raven_background</item>
+        <item name="android:navigationBarColor">@color/raven_background</item>
+        <item name="colorPrimary">@color/raven_accent</item>
+    </style>
+
+    <style name="Theme.RavenEyes.Splash" parent="Theme.RavenEyes" />
+</resources>

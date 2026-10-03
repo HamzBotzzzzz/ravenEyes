@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Raven Eyes</string>
+    <string name="splash_subtitle">System Bootstrap</string>
+    <string name="main_title">RAVEN EYES</string>
+    <string name="main_subtitle">System Bootstrap</string>
+    <string name="status_ready">APK 0 READY</string>
+</resources>
