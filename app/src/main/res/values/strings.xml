@@ -78,4 +78,15 @@
 <string name="gesture_cooldown_format">Cooldown: %1$s</string>
 <string name="gesture_test_scroll">TEST SCROLL ACTION</string>
 <string name="gesture_test_like">TEST LIKE ACTION</string>
+<string name="background_status_stopped">Background detection: STOPPED</string>
+<string name="background_status_starting">Background detection: STARTING…</string>
+<string name="background_status_running">Background detection: RUNNING</string>
+<string name="background_status_error">Background detection: ERROR</string>
+<string name="background_action_start">START BACKGROUND MODE</string>
+<string name="background_action_stop">STOP BACKGROUND MODE</string>
+
+<string name="service_channel_name">Raven Eyes</string>
+<string name="service_channel_description">Camera gesture detection is active</string>
+<string name="service_notification_title">Raven Eyes</string>
+<string name="service_notification_text">Gesture detection active</string>
 </resources>

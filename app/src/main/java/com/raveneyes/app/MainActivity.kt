@@ -1,9 +1,14 @@
 package com.raveneyes.app
 
 import android.Manifest
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import android.util.Log
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,6 +23,8 @@ import com.raveneyes.app.accessibility.AccessibilityStatus
 import com.raveneyes.app.calibration.CalibrationStore
 import com.raveneyes.app.databinding.ActivityMainBinding
 import com.raveneyes.app.gesture.GestureEngine
+import com.raveneyes.app.service.RavenEyesCameraService
+import com.raveneyes.app.service.ServiceState
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.util.concurrent.ExecutorService
@@ -35,6 +42,29 @@ class MainActivity : AppCompatActivity() {
 
     private val gestureEngine = GestureEngine()
     private var calibrationReady: Boolean = false
+
+    private var cameraService: RavenEyesCameraService? = null
+    private var serviceBound: Boolean = false
+    private var backgroundModeActive: Boolean = false
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* foreground service tetap bisa jalan tanpa notif di Android 13+ */ }
+
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            val local = binder as? RavenEyesCameraService.LocalBinder ?: return
+            cameraService = local.getService()
+            serviceBound = true
+            observeServiceStatus()
+        }
+        override fun onServiceDisconnected(name: ComponentName?) {
+            serviceBound = false
+            cameraService = null
+            backgroundModeActive = false
+            refreshBackgroundUi()
+        }
+    }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -138,8 +168,12 @@ class MainActivity : AppCompatActivity() {
             refreshGestureDebug(null)
         }
 
+        binding.buttonStartBackground.setOnClickListener { startBackgroundMode() }
+        binding.buttonStopBackground.setOnClickListener { stopBackgroundMode() }
+
         refreshAccessibilityStatus()
         refreshCalibrationStatus()
+        refreshBackgroundUi()
 
         lifecycleScope.launch {
             calibrationStore.calibrationFlow.collectLatest { data ->
@@ -154,10 +188,15 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshAccessibilityStatus()
-        if (currentState == State.GRANTED) {
-            startCamera()
+        refreshBackgroundUi()
+        if (!backgroundModeActive) {
+            if (currentState == State.GRANTED) {
+                startCamera()
+            } else {
+                evaluateInitialState()
+            }
         } else {
-            evaluateInitialState()
+            binding.textBackgroundStatus.text = getString(R.string.background_status_running)
         }
     }
 
@@ -168,6 +207,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        if (serviceBound) {
+            unbindService(serviceConnection)
+            serviceBound = false
+        }
         cameraProvider?.unbindAll()
         faceAnalyzer?.close()
         faceAnalyzer = null
@@ -176,6 +219,105 @@ class MainActivity : AppCompatActivity() {
         cameraExecutor = null
         analysisExecutor = null
         super.onDestroy()
+    }
+
+    private fun observeServiceStatus() {
+        val svc = cameraService ?: return
+        lifecycleScope.launch {
+            svc.status.collectLatest { status ->
+                runOnUiThread {
+                    when (status.state) {
+                        ServiceState.STOPPED -> {
+                            backgroundModeActive = false
+                            binding.textBackgroundStatus.text =
+                                getString(R.string.background_status_stopped)
+                        }
+                        ServiceState.STARTING -> {
+                            binding.textBackgroundStatus.text =
+                                getString(R.string.background_status_starting)
+                        }
+                        ServiceState.RUNNING -> {
+                            backgroundModeActive = true
+                            binding.textBackgroundStatus.text =
+                                getString(R.string.background_status_running)
+                        }
+                        ServiceState.ERROR -> {
+                            backgroundModeActive = false
+                            binding.textBackgroundStatus.text =
+                                getString(R.string.background_status_error) +
+                                (status.errorMessage?.let { " ($it)" } ?: "")
+                        }
+                    }
+                    refreshBackgroundUi()
+                }
+            }
+        }
+    }
+
+    private fun startBackgroundMode() {
+        val cameraGranted = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!cameraGranted) {
+            binding.textBackgroundStatus.text = getString(R.string.camera_permission_required)
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= 33) {
+            val notifGranted = ContextCompat.checkSelfPermission(
+                this, Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!notifGranted) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
+        releaseActivityCamera()
+
+        RavenEyesCameraService.start(this)
+        bindService(
+            Intent(this, RavenEyesCameraService::class.java),
+            serviceConnection,
+            Context.BIND_AUTO_CREATE
+        )
+        backgroundModeActive = true
+        refreshBackgroundUi()
+    }
+
+    private fun stopBackgroundMode() {
+        if (serviceBound) {
+            unbindService(serviceConnection)
+            serviceBound = false
+        }
+        cameraService = null
+        RavenEyesCameraService.stop(this)
+        backgroundModeActive = false
+        refreshBackgroundUi()
+
+        if (currentState == State.GRANTED) {
+            startCamera()
+        }
+    }
+
+    private fun releaseActivityCamera() {
+        try {
+            cameraProvider?.unbindAll()
+        } catch (t: Throwable) {
+            Log.w(TAG, "unbindAll error", t)
+        }
+        cameraProvider = null
+        faceAnalyzer?.close()
+        faceAnalyzer = null
+    }
+
+    private fun refreshBackgroundUi() {
+        if (backgroundModeActive) {
+            binding.buttonStartBackground.isEnabled = false
+            binding.buttonStopBackground.isEnabled = true
+        } else {
+            binding.buttonStartBackground.isEnabled = true
+            binding.buttonStopBackground.isEnabled = false
+        }
     }
 
     private fun evaluateInitialState() {
@@ -210,6 +352,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startCamera() {
+        if (backgroundModeActive) {
+            Log.i(TAG, "Background mode active; skipping Activity camera bind")
+            return
+        }
         Log.i(TAG, "Camera starting")
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
